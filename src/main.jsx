@@ -354,10 +354,11 @@ function App() {
                   <article className="story-card" key={story.id}>
                     {mediaUrls(story.image_url).length > 0 && (
                       <div className="story-media-group">
-                        <p className="story-media-label">Images</p>
+                        <p className="story-media-label">Images <span className="story-media-count">({mediaUrls(story.image_url).length})</span></p>
                         <div className="story-image-grid">
                           {mediaUrls(story.image_url).map((imageUrl) => <img key={imageUrl} src={imageUrl} alt="" />)}
                         </div>
+                        {mediaUrls(story.image_url).length > 1 && <p className="story-scroll-hint">Scroll right to view more images</p>}
                       </div>
                     )}
                     {mediaUrls(story.video_url).length > 0 && (
