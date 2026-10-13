@@ -51,6 +51,7 @@ function AdminPage() {
   const [authError, setAuthError] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [signingIn, setSigningIn] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('solutions');
   const [solutions, setSolutions] = React.useState([]);
   const [members, setMembers] = React.useState([]);
@@ -97,8 +98,20 @@ function AdminPage() {
   async function signIn(event) {
     event.preventDefault();
     setAuthError('');
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) setAuthError(signInError.message);
+    setSigningIn(true);
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (signInError) {
+      const message = signInError.message.toLowerCase();
+      setAuthError(message.includes('email not confirmed')
+        ? 'Please confirm your email address before signing in.'
+        : message.includes('invalid login credentials')
+          ? 'Invalid email or password.'
+          : 'Unable to sign in right now. Please try again.');
+    }
+    setSigningIn(false);
   }
 
   async function signOut() {
@@ -247,7 +260,7 @@ function AdminPage() {
           <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
           <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
           {authError && <div className="admin-error">{authError}</div>}
-          <button className="admin-primary-button" type="submit">Sign in</button>
+          <button className="admin-primary-button" type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Sign in'}</button>
         </form>
       </main>
     );
