@@ -132,8 +132,11 @@ function App() {
     let isMounted = true;
 
     async function loadContent() {
-      const [solutionsResult, teamResult] = await Promise.all([
-        supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color').eq('is_published', true).order('display_order'),
+      let solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color,image_url').eq('is_published', true).order('display_order');
+      if (solutionsResult.error?.code === '42703') {
+        solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color').eq('is_published', true).order('display_order');
+      }
+      const [teamResult] = await Promise.all([
         supabase.from('team_members').select('role,name,email').eq('is_visible', true).order('display_order'),
       ]);
       const storiesResult = await supabase.from('stories').select('id,title,excerpt,content,image_url,video_url,document_url,published_at').eq('is_published', true).order('published_at', { ascending: false });
@@ -149,6 +152,7 @@ function App() {
           details: solution.details,
           text: solution.description,
           color: solution.color,
+          imageUrl: solution.image_url,
         })));
       }
 
@@ -236,7 +240,7 @@ function App() {
                 </div>
               </div>
             </div>
-            <a className="admin-link" href="/admin">Admin login</a>
+            <a className="admin-link" href="/admin">Admin Login</a>
             <a className="nav-cta" href="#contact" onClick={() => setMenuOpen(false)}>Go to platform <ArrowUpRight size={18} /></a>
           </nav>
         </div>
@@ -319,8 +323,9 @@ function App() {
             <div className="service-grid">
               {contentServices.map((service) => (
                 <article className={`service-card ${service.color}`} key={service.number}>
+                  {service.imageUrl && <img className="service-image" src={service.imageUrl} alt="" />}
                   <div className="service-top"><span>{service.number}</span><ArrowUpRight size={21} /></div>
-                  <div>
+                  <div className="service-content">
                     <h3>{service.title}</h3>
                     <p>{service.text}</p>
                   </div>
@@ -466,7 +471,6 @@ function App() {
           <Logo />
           <p>Technology for the people.</p>
           <p className="footer-location">University of Rwanda, College of Science and Technology<br />African Center of Excellence in Internet of Things</p>
-          <a className="footer-admin-link" href="/admin">Admin login</a>
           <p className="copyright">© 2026 Rwanda Smart Systems</p>
         </div>
       </footer>

@@ -10,6 +10,7 @@ const emptySolution = {
   menu_subtitle: '',
   details: '',
   description: '',
+  image_url: '',
   color: 'orange',
   display_order: 1,
   is_published: true,
@@ -146,6 +147,37 @@ function AdminPage() {
       return;
     }
 
+    async function uploadSolutionImage(files) {
+      const file = Array.from(files || [])[0];
+      if (!file) return;
+      if (file.size === 0) {
+        setError('The selected image is empty. Please choose another image and retry.');
+        return;
+      }
+
+      const path = `solutions/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`;
+      const { error: uploadError } = await supabase.storage.from('story-files').upload(path, file, {
+        cacheControl: '3600',
+        contentType: file.type || 'image/*',
+        upsert: false,
+      });
+      if (uploadError) {
+        setError(uploadError.message);
+        return;
+      }
+
+      const { data: uploadedFile, error: verificationError } = await supabase.storage.from('story-files').download(path);
+      if (verificationError || !uploadedFile || uploadedFile.size === 0) {
+        await supabase.storage.from('story-files').remove([path]);
+        setError(verificationError?.message || 'The uploaded image is empty. Please choose another image and retry.');
+        return;
+      }
+
+      const { data } = supabase.storage.from('story-files').getPublicUrl(path);
+      setEditingSolution((current) => ({ ...current, image_url: data.publicUrl }));
+      setMessage('Solution image uploaded.');
+    }
+
     const uploadedUrls = [];
     for (const file of selectedFiles) {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`;
@@ -196,8 +228,12 @@ function AdminPage() {
     setError('');
     setMessage('');
     let story = null;
+    let solution = null;
     if (table === 'stories') {
       story = stories.find((item) => item.id === id);
+    }
+    if (table === 'solutions') {
+      solution = solutions.find((item) => item.id === id);
     }
 
     const { data: deletedRows, error: deleteError } = await supabase
@@ -227,6 +263,17 @@ function AdminPage() {
           setError(`Story deleted, but its uploaded files could not be removed: ${storageError.message}`);
           await loadData();
           return;
+        }
+      }
+      if (solution?.image_url) {
+        const filePath = solution.image_url.match(/\/storage\/v1\/object\/public\/story-files\/(.+)$/)?.[1];
+        if (filePath) {
+          const { error: storageError } = await supabase.storage.from('story-files').remove([filePath]);
+          if (storageError) {
+            setError(`Solution deleted, but its image could not be removed: ${storageError.message}`);
+            await loadData();
+            return;
+          }
         }
       }
     }
@@ -272,7 +319,7 @@ function AdminPage() {
             <>
               <div className="admin-title-row"><div><p className="admin-eyebrow">Website content</p><h2>Solutions</h2></div><button className="admin-primary-button" onClick={() => setEditingSolution({ ...emptySolution, number: String(solutions.length + 1).padStart(2, '0'), display_order: solutions.length + 1 })}><Plus size={17} /> Add solution</button></div>
               <div className="admin-list">{solutions.map((solution) => <article className="admin-list-item" key={solution.id}><div><strong>{solution.title}</strong><span>{solution.menu_subtitle}</span></div><div className="admin-item-actions"><small>{solution.is_published ? 'Published' : 'Hidden'}</small><button onClick={() => setEditingSolution(solution)}>Edit</button><button className="danger" onClick={() => remove('solutions', solution.id)}><Trash2 size={15} /></button></div></article>)}</div>
-              {editingSolution && <SolutionForm value={editingSolution} onChange={setEditingSolution} onSubmit={saveSolution} onCancel={() => setEditingSolution(null)} />}
+              {editingSolution && <SolutionForm value={editingSolution} onChange={setEditingSolution} onUpload={uploadSolutionImage} onSubmit={saveSolution} onCancel={() => setEditingSolution(null)} />}
             </>
           ) : activeTab === 'team' ? (
             <>
@@ -298,9 +345,9 @@ function Field({ label, value, onChange, multiline = false }) {
   return <label>{label}<Input value={value ?? ''} onChange={(event) => onChange(event.target.value)} required /></label>;
 }
 
-function SolutionForm({ value, onChange, onSubmit, onCancel }) {
+function SolutionForm({ value, onChange, onUpload, onSubmit, onCancel }) {
   const update = (key, nextValue) => onChange({ ...value, [key]: nextValue });
-  return <form className="admin-form" onSubmit={onSubmit}><div className="form-heading"><h3>{value.id ? 'Edit solution' : 'New solution'}</h3><button type="button" onClick={onCancel}>Close</button></div><div className="form-grid"><Field label="Short title" value={value.title} onChange={(v) => update('title', v)} /><Field label="Menu title" value={value.menu_title} onChange={(v) => update('menu_title', v)} /><Field label="Menu subtitle" value={value.menu_subtitle} onChange={(v) => update('menu_subtitle', v)} /><Field label="Color (orange, blue, green)" value={value.color} onChange={(v) => update('color', v)} /><Field label="Menu details" value={value.details} onChange={(v) => update('details', v)} multiline /><Field label="Card description" value={value.description} onChange={(v) => update('description', v)} multiline /></div><label className="checkbox"><input type="checkbox" checked={value.is_published} onChange={(event) => update('is_published', event.target.checked)} /> Published</label><button className="admin-primary-button" type="submit"><Save size={16} /> Save solution</button></form>;
+  return <form className="admin-form" onSubmit={onSubmit}><div className="form-heading"><h3>{value.id ? 'Edit solution' : 'New solution'}</h3><button type="button" onClick={onCancel}>Close</button></div><div className="form-grid"><Field label="Short title" value={value.title} onChange={(v) => update('title', v)} /><Field label="Menu title" value={value.menu_title} onChange={(v) => update('menu_title', v)} /><Field label="Menu subtitle" value={value.menu_subtitle} onChange={(v) => update('menu_subtitle', v)} /><Field label="Color (orange, blue, green)" value={value.color} onChange={(v) => update('color', v)} /><Field label="Menu details" value={value.details} onChange={(v) => update('details', v)} multiline /><Field label="Card description" value={value.description} onChange={(v) => update('description', v)} multiline /></div><UploadField label="Solution picture (optional)" accept="image/*" onChange={onUpload} url={value.image_url} /><label className="checkbox"><input type="checkbox" checked={value.is_published} onChange={(event) => update('is_published', event.target.checked)} /> Published</label><button className="admin-primary-button" type="submit"><Save size={16} /> Save solution</button></form>;
 }
 
 function MemberForm({ value, onChange, onSubmit, onCancel }) {
