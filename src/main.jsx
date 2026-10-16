@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowUpRight, ChevronDown, Menu, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Menu, MessageCircle, Send, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import AdminPage from './Admin';
 import './styles.css';
@@ -74,6 +74,21 @@ function mediaUrls(value) {
   }
 }
 
+function memberInitials(name) {
+  return name
+    .replace(/^(Eng\.|Mr|Dr)\s+/i, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+}
+
+function cleanTeamText(value) {
+  return typeof value === 'string' ? value.replace(/\*/g, '') : value;
+}
+
 function Logo() {
   return (
     <a className="logo" href="#top" aria-label="Rwanda Smart Systems home">
@@ -86,6 +101,108 @@ function Logo() {
       <span className="logo-dot">•</span>
       <span className="logo-systems">systems</span>
     </a>
+  );
+}
+
+function ChatWidget() {
+  const [open, setOpen] = React.useState(false);
+  const [conversation, setConversation] = React.useState(null);
+  const [messages, setMessages] = React.useState([]);
+  const [form, setForm] = React.useState({ name: '', email: '', body: '' });
+  const [reply, setReply] = React.useState('');
+  const [error, setError] = React.useState('');
+  const token = React.useMemo(() => {
+    return crypto.randomUUID();
+  }, []);
+
+  async function loadMessages(activeConversation) {
+    const { data, error: messagesError } = await supabase.rpc('get_visitor_messages', {
+      p_conversation_id: activeConversation.id,
+      p_visitor_token: token,
+    });
+    if (messagesError) {
+      setError(messagesError.message);
+      return;
+    }
+    setMessages(data || []);
+  }
+
+  async function notifyAdmin(activeConversation, body) {
+    const { error: notificationError } = await supabase.functions.invoke('send-inquiry-email', {
+      body: {
+        visitorName: activeConversation.visitor_name,
+        visitorEmail: activeConversation.visitor_email,
+        conversationId: activeConversation.id,
+        body,
+      },
+    });
+    if (notificationError) {
+      setError('Your message was saved, but the admin email alert could not be sent.');
+    }
+  }
+
+  React.useEffect(() => {
+    if (!conversation) return undefined;
+    loadMessages(conversation);
+    const interval = window.setInterval(() => loadMessages(conversation), 10000);
+    return () => window.clearInterval(interval);
+  }, [conversation]);
+
+  async function startConversation(event) {
+    event.preventDefault();
+    setError('');
+    const { data, error: startError } = await supabase.rpc('start_conversation', {
+      p_visitor_token: token,
+      p_visitor_name: form.name.trim(),
+      p_visitor_email: form.email.trim(),
+      p_body: form.body.trim(),
+    });
+    if (startError) {
+      setError(startError.message);
+      return;
+    }
+    setConversation(data);
+    setForm({ name: '', email: '', body: '' });
+    await notifyAdmin(data, form.body.trim());
+  }
+
+  async function sendMessage(event) {
+    event.preventDefault();
+    const body = reply.trim();
+    if (!body || !conversation) return;
+    setError('');
+    const { error: sendError } = await supabase.rpc('send_visitor_message', {
+      p_conversation_id: conversation.id,
+      p_visitor_token: token,
+      p_body: body,
+    });
+    if (sendError) {
+      setError(sendError.message);
+      return;
+    }
+    setReply('');
+    await loadMessages(conversation);
+    await notifyAdmin(conversation, body);
+  }
+
+  return (
+    <div className="chat-widget">
+      {open && <section className="chat-panel" aria-label="Conversation with Rwanda Smart Systems">
+        <div className="chat-header"><div><strong>Talk to our team</strong><span>We&apos;ll reply as soon as we can.</span></div><button type="button" onClick={() => setOpen(false)} aria-label="Close conversation"><X size={18} /></button></div>
+        {!conversation ? (
+          <form className="chat-form" onSubmit={startConversation}>
+            <label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
+            <label>Email (optional)<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+            <label>Message<textarea value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} required /></label>
+            {error && <p className="chat-error">{error}</p>}
+            <button className="admin-primary-button" type="submit"><Send size={15} /> Start conversation</button>
+          </form>
+        ) : (
+          <><div className="chat-messages">{messages.map((item) => <div className={`chat-message ${item.sender_type}`} key={item.id}><p>{item.body}</p><small>{new Date(item.created_at).toLocaleString()}</small></div>)}</div><form className="chat-reply" onSubmit={sendMessage}><textarea value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Write a message…" required /><button className="admin-primary-button" type="submit" aria-label="Send message"><Send size={15} /></button>{error && <p className="chat-error">{error}</p>}</form></>
+        )}
+      </section>}
+      <button className="chat-launcher" type="button" onClick={() => setOpen(!open)}><MessageCircle size={19} /> {open ? 'Close' : 'Chat with us'}</button>
+    </div>
   );
 }
 
@@ -132,12 +249,15 @@ function App() {
     let isMounted = true;
 
     async function loadContent() {
-      let solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color,image_url').eq('is_published', true).order('display_order');
-      if (solutionsResult.error?.code === '42703') {
-        solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color').eq('is_published', true).order('display_order');
+      let solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color,image_url,solution_link,solution_link_label').eq('is_published', true).order('display_order');
+      if (solutionsResult.error) {
+        solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color,image_url').eq('is_published', true).order('display_order');
+        if (solutionsResult.error) {
+          solutionsResult = await supabase.from('solutions').select('number,title,menu_title,menu_subtitle,details,description,color').eq('is_published', true).order('display_order');
+        }
       }
       const [teamResult] = await Promise.all([
-        supabase.from('team_members').select('role,name,email').eq('is_visible', true).order('display_order'),
+        supabase.from('team_members').select('role,name,email,description,image_url').eq('is_visible', true).order('display_order'),
       ]);
       const storiesResult = await supabase.from('stories').select('id,title,excerpt,content,image_url,video_url,document_url,published_at').eq('is_published', true).order('published_at', { ascending: false });
 
@@ -153,6 +273,8 @@ function App() {
           text: solution.description,
           color: solution.color,
           imageUrl: solution.image_url,
+          solutionLink: solution.solution_link,
+          solutionLinkLabel: solution.solution_link_label,
         })));
       }
 
@@ -205,7 +327,14 @@ function App() {
                       <ChevronDown size={15} />
                     </button>
                     {selectedSolution === index && (
-                      <p className="dropdown-details">{solution.details}</p>
+                      <>
+                        <p className="dropdown-details">{solution.details}</p>
+                        {solution.solutionLink && (
+                          <a className="dropdown-solution-link" href={solution.solutionLink} target="_blank" rel="noreferrer">
+                            {solution.solutionLinkLabel || 'Open solution'} <ArrowUpRight size={13} />
+                          </a>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}
@@ -311,6 +440,20 @@ function App() {
           </div>
         </section>
 
+        <section className="team-public section-padding">
+          <div className="container">
+            <div className="section-heading"><div><p className="section-kicker">The people behind the work</p><h2>Meet the <span>team.</span></h2></div><p className="section-heading-copy">A practical team building useful technology for Rwanda and beyond.</p></div>
+            <div className="team-public-grid">
+              {contentTeam.map((member) => (
+                <article className="team-public-card" key={member.email}>
+                  {member.image_url ? <img src={member.image_url} alt={member.name} /> : <div className="team-photo-placeholder">{memberInitials(member.name)}</div>}
+                  <div><p className="team-role">{cleanTeamText(member.role)}</p><h3>{cleanTeamText(member.name)}</h3><p className="team-description">{cleanTeamText(member.description) || 'Building practical technology and lasting impact.'}</p><a href={`mailto:${member.email}`}>Email: {member.email}</a></div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="solutions section-padding" id="solutions">
           <div className="container">
             <div className="section-heading">
@@ -328,6 +471,7 @@ function App() {
                   <div className="service-content">
                     <h3>{service.title}</h3>
                     <p>{service.text}</p>
+                    {service.solutionLink && <a className="service-link" href={service.solutionLink} target="_blank" rel="noreferrer">{service.solutionLinkLabel || 'Open solution'} <ArrowUpRight size={15} /></a>}
                   </div>
                   <div className="card-decoration" />
                 </article>
@@ -409,7 +553,7 @@ function App() {
             <p className="section-kicker">Let&apos;s build together</p>
             <h2>Have an idea?<br /><span>Let&apos;s make it real.</span></h2>
             <p className="contact-location">University of Rwanda, College of Science and Technology<br />African Center of Excellence in Internet of Things</p>
-            <a className="button button-primary" href="mailto:hello@rwandasmartsystems.rw">Start a conversation <ArrowUpRight size={18} /></a>
+            <button className="button button-primary" type="button" onClick={() => document.querySelector('.chat-launcher')?.click()}>Start a conversation <ArrowUpRight size={18} /></button>
           </div>
         </section>
       </main>
@@ -426,9 +570,11 @@ function App() {
             <div className="team-window-grid">
               {contentTeam.map((member) => (
                 <article className="team-window-member" key={member.email}>
-                  <p>{member.role}</p>
-                  <h3>{member.name}</h3>
-                  <a href={`mailto:${member.email}`}>{member.email}</a>
+                  <p className="team-role">{cleanTeamText(member.role)}</p>
+                  {member.image_url ? <img src={member.image_url} alt={member.name} /> : <div className="team-photo-placeholder team-photo-placeholder-small">{memberInitials(member.name)}</div>}
+                  <h3>{cleanTeamText(member.name)}</h3>
+                  {member.description && <p className="team-window-description">{cleanTeamText(member.description)}</p>}
+                  <a href={`mailto:${member.email}`}>Email: {member.email}</a>
                 </article>
               ))}
             </div>
@@ -474,6 +620,7 @@ function App() {
           <p className="copyright">© 2026 Rwanda Smart Systems</p>
         </div>
       </footer>
+      <ChatWidget />
     </div>
   );
 }
