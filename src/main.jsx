@@ -370,7 +370,6 @@ function App() {
               </div>
             </div>
             <a className="admin-link" href="/admin">Admin Login</a>
-            <a className="nav-cta" href="#contact" onClick={() => setMenuOpen(false)}>Go to platform <ArrowUpRight size={18} /></a>
           </nav>
         </div>
       </header>
@@ -436,20 +435,6 @@ function App() {
             <div className="intro-copy">
               <p>Rwanda Smart Systems is a home for practical innovation. We make complex technology useful, accessible, and impactful  from the farm to the city.</p>
               <a className="text-link dark-link" href="#impact">More about us <span>↗</span></a>
-            </div>
-          </div>
-        </section>
-
-        <section className="team-public section-padding">
-          <div className="container">
-            <div className="section-heading"><div><p className="section-kicker">The people behind the work</p><h2>Meet the <span>team.</span></h2></div><p className="section-heading-copy">A practical team building useful technology for Rwanda and beyond.</p></div>
-            <div className="team-public-grid">
-              {contentTeam.map((member) => (
-                <article className="team-public-card" key={member.email}>
-                  {member.image_url ? <img src={member.image_url} alt={member.name} /> : <div className="team-photo-placeholder">{memberInitials(member.name)}</div>}
-                  <div><p className="team-role">{cleanTeamText(member.role)}</p><h3>{cleanTeamText(member.name)}</h3><p className="team-description">{cleanTeamText(member.description) || 'Building practical technology and lasting impact.'}</p><a href={`mailto:${member.email}`}>Email: {member.email}</a></div>
-                </article>
-              ))}
             </div>
           </div>
         </section>
